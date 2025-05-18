@@ -1,0 +1,14 @@
+[package]
+name = "solana-grpc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+futures = "0.3.31"
+tokio = { version = "1.45.0", features = ["full"] }
+yellowstone-grpc-client = { git = "ssh://git@github.com/manudeobs/yellowstone-grpc-client.git", branch = "master" }
+yellowstone-grpc-proto = { git = "ssh://git@github.com/manudeobs/yellowstone-grpc-proto.git", branch = "master" }
+tonic = "0.12.0"
+tonic-health = "0.12.0"
+log = "0.4.27"
