@@ -1,24 +1,19 @@
 
 
 use {
-    futures::{sink::SinkExt, stream::StreamExt}, std::{sync::Arc, time::Duration}, tokio::sync::Mutex, tonic::transport::Endpoint, tonic_health::pb::health_client::HealthClient, yellowstone_grpc_client::{GeyserGrpcClient, InterceptorXToken}, yellowstone_grpc_proto::{
+    futures::{sink::SinkExt, stream::StreamExt}, std::{str::FromStr, time::Duration}, tonic::{metadata::AsciiMetadataValue, transport::Endpoint}, tonic_health::pb::health_client::HealthClient, yellowstone_grpc_client::{GeyserGrpcClient, InterceptorXToken}, yellowstone_grpc_proto::{
         geyser::{
-            geyser_client::GeyserClient, subscribe_update::UpdateOneof
+            geyser_client::GeyserClient, subscribe_update::UpdateOneof, SubscribeRequest, SubscribeUpdateTransaction
         },
         prelude::SubscribeRequestPing,
     }
 };
 
-pub use yellowstone_grpc_proto::geyser::{
-    SubscribeUpdateTransaction,
-    SubscribeRequest,
-    SubscribeRequestFilterTransactions,
-    CommitmentLevel
-};
-
+pub mod proto {
+    pub use yellowstone_grpc_proto::geyser;
+}
 
 pub struct GrpcStreamManager {
-    endpoint: String,
     client: GeyserGrpcClient<InterceptorXToken>,
     is_connected: bool,
     reconnect_attempts: u32,
@@ -29,9 +24,15 @@ pub struct GrpcStreamManager {
 
 impl GrpcStreamManager {
     
-    pub async fn new(endpoint: &str, x_token: &str, tx_handler: Box<dyn Fn(SubscribeUpdateTransaction) + Send + Sync>) -> Result<Arc<Mutex<GrpcStreamManager>>, anyhow::Error> {
+    pub async fn new(endpoint: &str, x_token: Option<String>, tx_handler: Box<dyn Fn(SubscribeUpdateTransaction) + Send + Sync>) -> Result<GrpcStreamManager, anyhow::Error> {
+        let x_token = if let Some(token) = x_token {
+            Some(AsciiMetadataValue::from_str(token.as_str())?)
+        } else {
+            None
+        };
+
         let interceptor = InterceptorXToken {
-            x_token: None,
+            x_token: x_token,
             x_request_snapshot: true,
         };
 
@@ -47,15 +48,14 @@ impl GrpcStreamManager {
             GeyserClient::with_interceptor(channel, interceptor),
         );
 
-        Ok(Arc::new(Mutex::new(GrpcStreamManager {
-            endpoint: endpoint.to_string(),
+        Ok(GrpcStreamManager {
             client,
             is_connected: false,
             reconnect_attempts: 0,
             max_reconnect_attempts: 10,
             reconnect_interval: Duration::from_secs(5),
             tx_handler: tx_handler
-        })))
+        })
     }
 
     /// Establishes connection and handles the subscription stream
@@ -87,9 +87,7 @@ impl GrpcStreamManager {
                                 .await?;
                         }
                         Some(UpdateOneof::Pong(_)) => {} // Ignore pong responses
-                        _ => {
-                            println!("Other update received: {:?}", msg);
-                        }
+                        _ => {}
                     }
                 },
                 Err(err) => {
@@ -111,12 +109,10 @@ impl GrpcStreamManager {
     /// * `request` - The original subscription request to reestablish the connection
     async fn reconnect(&mut self, request: SubscribeRequest) -> Result<(), anyhow::Error> {
         if self.reconnect_attempts >= self.max_reconnect_attempts {
-            println!("Max reconnection attempts reached");
-            return Ok(());
+            return Err(anyhow::anyhow!("Max reconnection attempts reached"));
         }
 
         self.reconnect_attempts += 1;
-        println!("Reconnecting... Attempt {}", self.reconnect_attempts);
 
         let backoff = self.reconnect_interval * std::cmp::min(self.reconnect_attempts, 5);
         tokio::time::sleep(backoff).await;
