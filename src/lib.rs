@@ -14,17 +14,18 @@ pub mod proto {
 }
 
 pub struct GrpcStreamManager {
+    endpoint: String,
     client: GeyserGrpcClient<InterceptorXToken>,
     is_connected: bool,
     reconnect_attempts: u32,
     max_reconnect_attempts: u32,
     reconnect_interval: Duration,
-    tx_handler: Box<dyn Fn(SubscribeUpdateTransaction) + Send + Sync>
+    tx_handler: Box<dyn Fn(SubscribeUpdateTransaction, &str) + Send + Sync>
 }
 
 impl GrpcStreamManager {
     
-    pub async fn new(endpoint: &str, x_token: Option<String>, tx_handler: Box<dyn Fn(SubscribeUpdateTransaction) + Send + Sync>) -> Result<GrpcStreamManager, anyhow::Error> {
+    pub async fn new(endpoint: &str, x_token: Option<String>, tx_handler: Box<dyn Fn(SubscribeUpdateTransaction, &str) + Send + Sync>) -> Result<GrpcStreamManager, anyhow::Error> {
         let x_token = if let Some(token) = x_token {
             Some(AsciiMetadataValue::from_str(token.as_str())?)
         } else {
@@ -49,6 +50,7 @@ impl GrpcStreamManager {
         );
 
         Ok(GrpcStreamManager {
+            endpoint: endpoint.to_string(),
             client,
             is_connected: false,
             reconnect_attempts: 0,
@@ -76,7 +78,7 @@ impl GrpcStreamManager {
                 Ok(msg) => {
                     match msg.update_oneof {
                         Some(UpdateOneof::Transaction(tx)) => {
-                            self.tx_handler.as_ref()(tx);
+                            self.tx_handler.as_ref()(tx, &self.endpoint);
                         }
                         Some(UpdateOneof::Ping(_)) => {
                             subscribe_tx
