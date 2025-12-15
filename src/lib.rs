@@ -13,6 +13,10 @@ pub mod proto {
     pub use yellowstone_grpc_proto::geyser;
 }
 
+#[cfg(debug_assertions)]
+pub mod helper;
+
+
 pub struct GrpcStreamManager {
     endpoint: String,
     client: GeyserGrpcClient<InterceptorXToken>,
